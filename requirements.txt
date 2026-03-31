@@ -4,6 +4,8 @@ sentence-transformers==4.1.0
 pypdf==5.6.1
 python-dotenv==1.1.0
 langchain-pinecone==0.2.8
-langchain-openai==0.3.24
+langchain-groq==0.3.8
 langchain-community==0.3.26
+fpdf2==2.8.7
+deep-translator==1.11.4
 -e .

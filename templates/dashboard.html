@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediChat | Analytics Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Plus+Jakarta+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b1118;
+            --surface: #141f2b;
+            --accent: #3b82f6;
+            --accent2: #10b981;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --border: rgba(255, 255, 255, 0.05);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            padding: 40px;
+        }
+        .header { margin-bottom: 40px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { font-family: 'Outfit'; font-size: 2.5rem; font-weight: 800; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 40px; }
+        .stat-card {
+            background: var(--surface); padding: 30px; border-radius: 20px;
+            border: 1px solid var(--border);
+        }
+        .stat-val { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin-bottom: 5px; }
+        .stat-label { color: var(--text-dim); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.1em; }
+        
+        .main-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 30px; }
+        .card {
+            background: var(--surface); border-radius: 24px; padding: 30px;
+            border: 1px solid var(--border);
+        }
+        .card-title { font-family: 'Outfit'; font-size: 1.2rem; font-weight: 700; margin-bottom: 20px; color: var(--accent2); }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; color: var(--text-dim); font-size: 0.8rem; padding: 12px; border-bottom: 1px solid var(--border); }
+        td { padding: 15px 12px; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
+        .lang-tag { padding: 2px 8px; border-radius: 4px; background: rgba(59, 130, 246, 0.1); font-size: 0.7rem; color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MediChat <em>Analytics</em></h1>
+        <div class="stat-card" style="padding: 10px 20px; border-radius: 12px;">
+            <div class="stat-label">Total Queries</div>
+            <div class="stat-val" style="font-size: 1.5rem;">{{ total }}</div>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        <div class="card">
+            <h3 class="card-title">Recent Interactions</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>QUESTION</th>
+                        <th>LANG</th>
+                        <th>TIME</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for q in recent %}
+                    <tr>
+                        <td>{{ q[0][:80] }}...</td>
+                        <td><span class="lang-tag">{{ q[1] }}</span></td>
+                        <td style="color: var(--text-dim); font-size: 0.8rem;">{{ q[2] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3 class="card-title">Top Hot Topics</h3>
+            <ul>
+                {% for q in top_queries %}
+                <li style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border);">
+                    <span style="font-size: 0.95rem;">{{ q[0] }}</span>
+                    <span style="color: var(--accent); font-weight: 700;">{{ q[1] }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

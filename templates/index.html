@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedChat — AI Medical Assistant</title>
+    <link rel="stylesheet" href="/static/style.css?v=2.1">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+
+    <canvas id="gridCanvas"></canvas>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="app">
+
+        <!-- LEFT PANEL -->
+        <aside class="panel-left">
+            <div class="brand">
+                <div class="brand-mark">
+                    <div class="cross-h"></div>
+                    <div class="cross-v"></div>
+                    <div class="brand-ring"></div>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-name">Med<em>Chat</em></span>
+                    <span class="brand-version">v2.0 · RAG Powered</span>
+                </div>
+            </div>
+
+            <div class="panel-divider"></div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <span class="stat-num" id="qCount">0</span>
+                    <span class="stat-label">Queries</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-num">384</span>
+                    <span class="stat-label">Dimensions</span>
+                </div>
+                <div class="stat-card active" onclick="newChat()" style="cursor:pointer;" title="Start a New Chat">
+                    <span class="stat-dot"></span>
+                    <span class="stat-label">New Chat</span>
+                </div>
+            </div>
+
+            <div class="nav-section">
+                <p class="nav-label">Recent Chats</p>
+                <nav class="quick-nav" id="sessionsList">
+                    <button class="nav-item">
+                        <span class="nav-icon">💬</span><i style="opacity:0.6; font-size:12px;">Loading...</i>
+                    </button>
+                </nav>
+            </div>
+
+            <div class="nav-section">
+                <p class="nav-label">Quick Topics</p>
+                <nav class="quick-nav">
+                    <button class="nav-item" onclick="quickAsk('What is Acromegaly and Gigantism?')">
+                        <span class="nav-icon">◈</span>Acromegaly & Gigantism
+                    </button>
+                    <button class="nav-item" onclick="quickAsk('What are the symptoms of Diabetes Mellitus?')">
+                        <span class="nav-icon">◈</span>Diabetes Mellitus
+                    </button>
+                    <button class="nav-item" onclick="quickAsk('How is Hypertension diagnosed and treated?')">
+                        <span class="nav-icon">◈</span>Hypertension
+                    </button>
+                    <button class="nav-item" onclick="quickAsk('What causes Iron Deficiency Anemia?')">
+                        <span class="nav-icon">◈</span>Anemia
+                    </button>
+                    <button class="nav-item" onclick="quickAsk('What is Alzheimer disease?')">
+                        <span class="nav-icon">◈</span>Alzheimer's Disease
+                    </button>
+                    <button class="nav-item" onclick="quickAsk('What are the symptoms of Asthma?')">
+                        <span class="nav-icon">◈</span>Asthma
+                    </button>
+                </nav>
+            </div>
+
+            <div class="panel-spacer"></div>
+
+            <div class="source-badge">
+                <div class="source-icon">📖</div>
+                <div class="source-info">
+                    <span class="source-title">Gale Encyclopedia of Medicine</span>
+                    <span class="source-sub">2nd Edition · Verified Source</span>
+                </div>
+            </div>
+
+            <div class="warning-strip">
+                ⚠ Not a substitute for professional medical advice
+            </div>
+        </aside>
+
+        <!-- MAIN CHAT -->
+        <main class="chat-main">
+
+            <header class="topbar">
+                <div class="topbar-left">
+                    <div class="live-badge">
+                        <div class="live-dot"></div>LLaMA 3.1 · 8B
+                    </div>
+                    <div class="model-tag">Pinecone Vector DB</div>
+                </div>
+                <div class="topbar-right" style="display:flex; gap:10px;">
+                    <button class="icon-btn" title="Export PDF" onclick="exportChat()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                        </svg>
+                    </button>
+                    <button class="icon-btn" onclick="newChat()" title="New Chat">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path
+                                d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <div class="messages" id="messages">
+                <div class="hero-state" id="heroState">
+                    <div class="hero-cross">
+                        <div class="hc-h"></div>
+                        <div class="hc-v"></div>
+                        <div class="hc-ring r1"></div>
+                        <div class="hc-ring r2"></div>
+                    </div>
+                    <h1 class="hero-title">What can I<br><em>help you learn</em><br>today?</h1>
+                    <p class="hero-sub">Ask about any medical condition, symptom, treatment, or medication from the Gale
+                        Encyclopedia of Medicine.</p>
+                </div>
+            </div>
+
+            <div class="input-dock">
+                <div class="input-wrap" id="inputWrap">
+                    <textarea id="userInput" placeholder="Ask a medical question…" rows="1" onkeydown="handleKey(event)"
+                        oninput="autoResize(this)"></textarea>
+                    <div class="input-actions">
+                        <span class="char-count" id="charCount">0</span>
+                        <button class="icon-btn" id="micBtn" onclick="startVoice()" title="Voice Input"
+                            style="border:none; margin-right:5px;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" y1="19" x2="12" y2="23" />
+                                <line x1="8" y1="23" x2="16" y2="23" />
+                            </svg>
+                        </button>
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M12 19V5M5 12l7-7 7 7" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <p class="dock-hint"><kbd>↵</kbd> send &nbsp;·&nbsp; <kbd>⇧↵</kbd> new line</p>
+            </div>
+
+        </main>
+
+        <!-- RIGHT PANEL (RESOURCES) -->
+        <aside class="panel-right">
+            <div class="res-section">
+                <h3 class="res-label">Anatomical Navigator</h3>
+                <div class="visual-card" style="padding:10px; min-height:180px;">
+                    <svg viewBox="0 0 100 220"
+                        style="height:160px; width:auto; filter: drop-shadow(0 0 10px rgba(59,130,246,0.3))">
+                        <!-- Head -->
+                        <circle cx="50" cy="25" r="18" fill="rgba(59,130,246,0.1)" stroke="var(--accent)"
+                            stroke-width="1" style="cursor:pointer;"
+                            onclick="quickAsk('What conditions affect the head and brain?')" />
+                        <!-- Chest -->
+                        <rect x="35" y="48" width="30" height="40" rx="5" fill="rgba(59,130,246,0.1)"
+                            stroke="var(--accent)" stroke-width="1" style="cursor:pointer;"
+                            onclick="quickAsk('What are common heart and lung conditions?')" />
+                        <!-- Abdomen -->
+                        <rect x="35" y="92" width="30" height="40" rx="5" fill="rgba(16,185,129,0.1)"
+                            stroke="var(--accent2)" stroke-width="1" style="cursor:pointer;"
+                            onclick="quickAsk('What conditions cause abdominal pain?')" />
+                        <!-- Limbs -->
+                        <line x1="35" y1="55" x2="15" y2="100" stroke="var(--text-3)" stroke-width="4"
+                            stroke-linecap="round" onclick="quickAsk('Joint and limb pain causes')"
+                            style="cursor:pointer;" />
+                        <line x1="65" y1="55" x2="85" y2="100" stroke="var(--text-3)" stroke-width="4"
+                            stroke-linecap="round" onclick="quickAsk('Joint and limb pain causes')"
+                            style="cursor:pointer;" />
+                        <line x1="40" y1="135" x2="35" y2="200" stroke="var(--text-3)" stroke-width="5"
+                            stroke-linecap="round" onclick="quickAsk('Leg and foot conditions')"
+                            style="cursor:pointer;" />
+                        <line x1="60" y1="135" x2="65" y2="200" stroke="var(--text-3)" stroke-width="5"
+                            stroke-linecap="round" onclick="quickAsk('Leg and foot conditions')"
+                            style="cursor:pointer;" />
+                    </svg>
+                </div>
+                <p style="font-size:10px; color:var(--text-3); text-align:center; margin-top:-10px;">Click a region to
+                    explore</p>
+            </div>
+
+            <div class="panel-divider"></div>
+
+            <div class="res-section">
+                <h3 class="res-label">Visual Aids</h3>
+                <div class="visual-card" id="visualPanel">
+                    <p class="visual-placeholder">Images and diagrams will appear here when relevant.</p>
+                </div>
+            </div>
+
+            <div class="panel-divider"></div>
+
+            <div class="res-section">
+                <h3 class="res-label">Verified Resources</h3>
+                <div class="resource-list" id="resourceList">
+                    <p class="res-placeholder">Related articles and books will be listed here.</p>
+                </div>
+            </div>
+
+            <div class="panel-divider"></div>
+
+            <div class="res-section">
+                <h3 class="res-label">Quick Search</h3>
+                <div class="extra-actions" id="extraActions">
+                    <button class="action-btn" onclick="openSearch('images')">Search Medical Images</button>
+                    <button class="action-btn" onclick="openSearch('pubmed')">Search on PubMed</button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <script>
+        // Canvas dot grid
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        resizeCanvas();
+        window.addEventListener('resize', () => { resizeCanvas(); initDots(); });
+
+        let dots = [], frame = 0;
+        function initDots() {
+            dots = [];
+            const s = 54;
+            for (let x = 0; x < canvas.width + s; x += s)
+                for (let y = 0; y < canvas.height + s; y += s)
+                    dots.push({ x, y, base: Math.random() * Math.PI * 2, speed: 0.003 + Math.random() * 0.004 });
+        }
+        initDots();
+
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            frame++;
+            dots.forEach(d => {
+                const p = Math.sin(d.base + frame * d.speed);
+                ctx.fillStyle = `rgba(20,184,166,${0.04 + p * 0.03})`;
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, 1 + p * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            requestAnimationFrame(drawGrid);
+        }
+        drawGrid();
+
+        let currentChatId = Date.now().toString();
+        let queryCount = 0;
+        let lastQuery = "";
+        let currentLang = "en";
+
+        function updateLang(val) { currentLang = val; }
+
+        async function runSymptomCheck() {
+            const boxes = document.querySelectorAll('.symp-box:checked');
+            const symptoms = Array.from(boxes).map(b => b.value);
+            if (symptoms.length === 0) return alert("Please select at least one symptom.");
+
+            appendUser(`Symptom Check: ${symptoms.join(', ')}`);
+            appendTyping();
+
+            try {
+                const res = await fetch('/symptom-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symptoms, chat_id: currentChatId })
+                });
+                const data = await res.json();
+                removeTyping();
+                appendBot(data.answer);
+                loadSessions();
+            } catch {
+                removeTyping();
+                appendBot('Symptom check failed. Please try again.');
+            }
+        }
+
+        function autoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+            document.getElementById('charCount').textContent = el.value.length;
+        }
+
+        function handleKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        }
+
+        function quickAsk(text) {
+            const input = document.getElementById('userInput');
+            input.value = text;
+            autoResize(input);
+            sendMessage();
+        }
+
+        function clearChat() {
+            document.getElementById('messages').innerHTML = '';
+            queryCount = 0;
+            document.getElementById('qCount').textContent = '0';
+            showHero();
+        }
+
+        function newChat() {
+            currentChatId = Date.now().toString();
+            clearChat();
+        }
+
+        function showHero() {
+            const messages = document.getElementById('messages');
+            const hero = document.createElement('div');
+            hero.id = 'heroState';
+            hero.className = 'hero-state';
+            hero.innerHTML = `
+            <div class="hero-cross"><div class="hc-h"></div><div class="hc-v"></div><div class="hc-ring r1"></div><div class="hc-ring r2"></div></div>
+            <h1 class="hero-title">What can I<br><em>help you learn</em><br>today?</h1>
+            <p class="hero-sub">Ask about any medical condition, symptom, treatment, or medication.</p>
+            <div class="hero-chips">
+                <button class="chip" onclick="quickAsk('What is Acromegaly?')">Acromegaly</button>
+                <button class="chip" onclick="quickAsk('What is Type 2 Diabetes?')">Type 2 Diabetes</button>
+                <button class="chip" onclick="quickAsk('What is Hypertension?')">Hypertension</button>
+                <button class="chip" onclick="quickAsk('What is Anemia?')">Anemia</button>
+            </div>`;
+            messages.appendChild(hero);
+        }
+
+        function getTime() {
+            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function escapeHtml(t) {
+            return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function appendUser(text) {
+            document.getElementById('heroState')?.remove();
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'msg-row user';
+            div.innerHTML = `<div class="msg-bubble user-bubble"><p>${escapeHtml(text)}</p></div><div class="msg-meta">${getTime()}</div>`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function appendTyping() {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'msg-row bot';
+            div.id = 'typingRow';
+            div.innerHTML = `
+            <div class="bot-avatar"><div class="ba-cross"><div class="ba-h"></div><div class="ba-v"></div></div></div>
+            <div class="msg-bubble bot-bubble typing-bubble"><span></span><span></span><span></span></div>`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function removeTyping() { document.getElementById('typingRow')?.remove(); }
+
+        function appendBot(text) {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'msg-row bot';
+
+            let mainContent = text;
+            let followups = [];
+            let sources = [];
+            let severity = '';
+            let severityColor = 'var(--accent)';
+
+            // Parse severity
+            if (mainContent.includes('SEVERITY:')) {
+                const parts = mainContent.split('SEVERITY:');
+                mainContent = parts[1].split('\n').slice(1).join('\n').trim(); // Skip the severity line 
+                severity = parts[1].split('\n')[0].trim();
+                if (severity === 'EMERGENCY') severityColor = '#ef4444';
+                if (severity === 'CONSULT_DOCTOR') severityColor = '#f59e0b';
+            }
+
+            // Parse followups
+            if (mainContent.includes('FOLLOWUPS:')) {
+                const parts = mainContent.split('FOLLOWUPS:');
+                mainContent = parts[0].trim();
+                followups = parts[1].trim().split('\n').map(f => f.replace(/^-\s*/, '').trim()).filter(Boolean);
+            }
+
+            // Parse sources
+            if (mainContent.includes('SOURCES:')) {
+                const parts = mainContent.split('SOURCES:');
+                mainContent = parts[0].trim();
+                sources = parts[1].trim().split('\n').map(s => s.replace(/^-\s*/, '').trim()).filter(Boolean);
+            }
+            updateResourcePanel(sources);
+
+            let chipsHtml = '';
+            if (followups.length > 0) {
+                chipsHtml = '<div class="followup-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;">' +
+                    followups.map(f => `<button class="chip" style="font-size:11px; padding:4px 10px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.05); color:var(--text-1); cursor:pointer;" onclick="quickAsk('${escapeHtml(f.replace(/'/g, "\\'"))}')">${escapeHtml(f)}</button>`).join('') +
+                    '</div>';
+            }
+
+            let badgeHtml = severity ? `<span style="font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; border:1px solid ${severityColor}; color:${severityColor}; margin-right:8px; display:inline-block; margin-bottom:5px;">${severity}</span><br>` : '';
+
+            div.innerHTML = `
+            <div class="bot-avatar"><div class="ba-cross"><div class="ba-h"></div><div class="ba-v"></div></div></div>
+            <div class="msg-content">
+                <div class="msg-bubble bot-bubble">
+                    ${badgeHtml}
+                    <p style="margin:0">${escapeHtml(mainContent).replace(/\n/g, '<br>')}</p>
+                </div>
+                ${chipsHtml}
+                <div class="msg-meta" style="margin-top:5px;">${getTime()} · MedChat</div>
+            </div>`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        async function exportChat() {
+            try {
+                const formData = new URLSearchParams();
+                formData.append('chat_id', currentChatId);
+                const res = await fetch('/export', { method: 'POST', body: formData });
+                if (res.ok) {
+                    const blob = await res.blob();
+
+                    let filename = 'MedChat_Consultation_Record.pdf';
+                    const cd = res.headers.get('Content-Disposition');
+                    if (cd && cd.includes('filename=')) {
+                        filename = cd.split('filename=')[1].replace(/["']/g, '');
+                    }
+
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert('Export failed.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Export failed due to network error.');
+            }
+        }
+
+
+        async function updateResourcePanel(resources) {
+            const list = document.getElementById('resourceList');
+            const visual = document.getElementById('visualPanel');
+
+            if (resources.length > 0) {
+                list.innerHTML = resources.map(r => `
+                <div class="res-item">
+                    <span class="res-icon">📄</span>
+                    <span class="res-text">${escapeHtml(r.replace(/^[*-]\s*/, ''))}</span>
+                </div>
+            `).join('');
+
+                visual.innerHTML = '<i style="color:var(--text-3); font-size:12px;">Searching visual database...</i>';
+
+                try {
+                    const query = encodeURIComponent(lastQuery.replace(/what is|are the symptoms of|how is|diagnosed|treated|causes|of|the/gi, '').trim());
+                    const wRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${query}&utf8=&format=json&origin=*`);
+                    const wData = await wRes.json();
+
+                    if (wData.query && wData.query.search.length > 0) {
+                        const title = wData.query.search[0].title;
+                        const pRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=pageimages&format=json&pithumbsize=500&origin=*`);
+                        const pData = await pRes.json();
+                        const pages = pData.query.pages;
+                        const pageId = Object.keys(pages)[0];
+
+                        if (pages[pageId].thumbnail) {
+                            visual.innerHTML = `
+                                <img src="${pages[pageId].thumbnail.source}" style="width:100%; border-radius:8px; margin-bottom:10px;">
+                                <p style="font-size:12px; color:var(--text-2); text-align:center;">Source: Wikipedia Media (${title})</p>
+                            `;
+                            return;
+                        }
+                    }
+                    visual.innerHTML = `
+                        <div class="image-suggest">
+                            <div class="suggest-info">
+                                <p>View anatomical diagrams and clinical images for:</p>
+                                <strong>${escapeHtml(lastQuery)}</strong>
+                            </div>
+                            <button class="visual-btn" onclick="openSearch('images')">Open Visual Library</button>
+                        </div>
+                    `;
+                } catch (e) {
+                    visual.innerHTML = '';
+                }
+            }
+        }
+
+        function openSearch(type) {
+            const query = encodeURIComponent(lastQuery);
+            if (type === 'images') window.open(`https://www.google.com/search?tbm=isch&q=${query}+medical+diagram`, '_blank');
+            if (type === 'pubmed') window.open(`https://pubmed.ncbi.nlm.nih.gov/?term=${query}`, '_blank');
+        }
+
+        function quickAsk(text) {
+            document.getElementById('userInput').value = text;
+            sendMessage();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            lastQuery = text;
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            input.disabled = true;
+
+            appendUser(text);
+            input.value = '';
+            input.style.height = 'auto';
+            document.getElementById('charCount').textContent = '0';
+            queryCount++;
+            document.getElementById('qCount').textContent = queryCount;
+            appendTyping();
+
+            try {
+                if (currentLang === 'en') {
+                    const res = await fetch('/stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `msg=${encodeURIComponent(text)}&lang=${currentLang}&chat_id=${encodeURIComponent(currentChatId)}`
+                    });
+                    if (res.ok) {
+                        removeTyping();
+                        const messages = document.getElementById('messages');
+                        const div = document.createElement('div');
+                        div.className = 'msg-row bot';
+                        div.innerHTML = `
+                            <div class="bot-avatar"><div class="ba-cross"><div class="ba-h"></div><div class="ba-v"></div></div></div>
+                            <div class="msg-content"><div class="msg-bubble bot-bubble" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.1);"><p style="margin:0; opacity:0.8; font-style:italic;" id="streamTarget"></p></div></div>
+                        `;
+                        messages.appendChild(div);
+                        const target = document.getElementById('streamTarget');
+
+                        const reader = res.body.getReader();
+                        const decoder = new TextDecoder();
+                        let rawAcc = "";
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            const chunk = decoder.decode(value, { stream: true });
+                            const packets = chunk.split('\n');
+                            for (let packet of packets) {
+                                if (packet.startsWith('data: ')) {
+                                    const d = packet.slice(6).trim();
+                                    try {
+                                        const p = JSON.parse(d);
+                                        if (p.text) { rawAcc += p.text; target.innerText = rawAcc; messages.scrollTop = messages.scrollHeight; }
+                                        if (p.done) { div.remove(); appendBot(p.fullText); loadSessions(); return; }
+                                    } catch (e) { }
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+
+                const res = await fetch('/get', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `msg=${encodeURIComponent(text)}&lang=${currentLang}&chat_id=${encodeURIComponent(currentChatId)}`
+                });
+                const answer = await res.text();
+                removeTyping();
+                appendBot(answer);
+                loadSessions();
+            } catch (err) {
+                removeTyping();
+                appendBot('Something went wrong. Please try again.');
+            } finally {
+                sendBtn.disabled = false;
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        async function loadSessions() {
+            try {
+                const res = await fetch('/sessions');
+                if (!res.ok) return;
+                const data = await res.json();
+                const sl = document.getElementById('sessionsList');
+                if (sl) {
+                    if (data.sessions.length === 0) {
+                        sl.innerHTML = '<p style="font-size:12px; opacity:0.6; padding-left:15px; margin-top:5px;">No recent chats</p>';
+                        return;
+                    }
+                    sl.innerHTML = data.sessions.map(s => `
+                        <button class="nav-item" onclick="loadHistory('${s.chat_id}')" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; border-left: 2px solid transparent; text-align: left;">
+                            <span class="nav-icon">💬</span>${escapeHtml(s.title)}
+                        </button>
+                    `).join('');
+                }
+            } catch (e) { }
+        }
+
+        async function loadHistory(chatId) {
+            currentChatId = chatId;
+            clearChat();
+            try {
+                const res = await fetch('/history/' + chatId);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data && data.history && data.history.length > 0) {
+                    const hero = document.getElementById('heroState');
+                    if (hero) hero.remove();
+                    data.history.forEach(item => {
+                        appendUser(item.q);
+                        queryCount++;
+                        appendBot(item.a);
+                    });
+                    document.getElementById('qCount').textContent = queryCount;
+                }
+            } catch (e) { console.warn("Failed to load session history:", e); }
+        }
+
+        // INIT LOAD
+        (async function initApp() {
+            await loadSessions();
+        })();
+    </script>
