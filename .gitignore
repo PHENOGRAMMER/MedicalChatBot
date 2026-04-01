@@ -208,6 +208,5 @@ __marimo__/
 
 # Project Specific
 medichat.db
-data/
 *.pdf
 research/
