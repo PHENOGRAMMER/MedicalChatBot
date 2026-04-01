@@ -17,6 +17,10 @@ Ask any medical question and get accurate, context-grounded answers.
 - Right panel with resources and PubMed search
 - Session-based conversation history
 
+## 📚 Data
+- Place your PDF(s) inside the `data/` folder before running `store_index.py`.
+- This project uses the *Gale Encyclopedia of Medicine, 2nd Edition*.
+
 ## ⚙️ Setup
 1. Clone the repo
 ```bash
