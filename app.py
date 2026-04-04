@@ -28,8 +28,11 @@ load_dotenv()
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+# Safely set if they were missing from os.environ but present in .env
+if PINECONE_API_KEY:
+    os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+if GROQ_API_KEY:
+    os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 
 # Global storage for lazy-loaded chain
 _rag_chain = None
@@ -84,8 +87,10 @@ def get_rag_chain():
         print("RAG Chain Initialized Successfully!")
         return _rag_chain
     except Exception as e:
-        print(f"ERROR: Failed to initialize RAG chain: {e}")
-        raise e
+        import traceback
+        error_msg = f"ERROR: Failed to initialize RAG chain: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return None  # Return None instead of raising so we can handle it gracefully in routes
 
 # Memory store for chat history (Simple global store for demo, ideally use DB)
 chats = {}
@@ -115,13 +120,16 @@ def setup_db():
 setup_db()
 
 def log_query(session_id, chat_id, question, answer, lang, latency_ms=0, q_words=0, a_words=0):
-    conn = sqlite3.connect('medichat.db')
-    cursor = conn.cursor()
-    cursor.execute('''INSERT INTO queries (session_id, chat_id, question, answer, lang, latency_ms, q_words, a_words) 
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', 
-                   (session_id, chat_id, question, answer, lang, latency_ms, q_words, a_words))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect('medichat.db')
+        cursor = conn.cursor()
+        cursor.execute('''INSERT INTO queries (session_id, chat_id, question, answer, lang, latency_ms, q_words, a_words) 
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', 
+                       (session_id, chat_id, question, answer, lang, latency_ms, q_words, a_words))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"ERROR: Failed to log query to DB: {e}")
 
 
 @app.route("/")
@@ -169,8 +177,12 @@ def chat():
     
     chat_history = chats[chat_key]
     
+    chain = get_rag_chain()
+    if not chain:
+        return "SEVERITY: ERROR\nThe medical database is currently unavailable due to a configuration error. Please ensure API keys are set correctly."
+
     start_time = time.time()
-    response = get_rag_chain().invoke({"input": msg_en, "chat_history": chat_history})
+    response = chain.invoke({"input": msg_en, "chat_history": chat_history})
     end_time = time.time()
     latency = (end_time - start_time) * 1000
     
@@ -253,8 +265,14 @@ def chat_stream():
     f1, f2, f3 = "What information can you provide?", "Tell me about common conditions.", "How do I use the body map?"
     
     def generate():
+        chain = get_rag_chain()
+        if not chain:
+            yield f"data: {json.dumps({'text': 'ERROR: The medical database is currently unavailable.'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'fullText': 'The medical database is currently unavailable.'})}\n\n"
+            return
+            
         start_time = time.time()
-        response_stream = get_rag_chain().stream({"input": msg_en, "chat_history": chat_history})
+        response_stream = chain.stream({"input": msg_en, "chat_history": chat_history})
         ans_raw_accumulator = []
         context_docs = []
         has_yielded_context = False
@@ -297,8 +315,12 @@ def symptom_check():
     chat_id = request.json.get("chat_id", "default")
     sid = request.remote_addr
     query = f"Based on the provided medical encyclopedia, what conditions are associated with these symptoms: {', '.join(symptoms)}? Please categorize by likelihood and provide next steps."
+    chain = get_rag_chain()
+    if not chain:
+        return jsonify({"answer": "SEVERITY: ERROR\nThe medical database is currently unavailable."})
+
     start_time = time.time()
-    response = get_rag_chain().invoke({"input": query, "chat_history": []})
+    response = chain.invoke({"input": query, "chat_history": []})
     latency = (time.time() - start_time) * 1000
     ans = f"SEVERITY: CONSULT_DOCTOR\n" + response["answer"]
     log_query(sid, chat_id, f"SYMPTOM CHECK: {symptoms}", ans, "en", latency_ms=latency, q_words=len(query.split()), a_words=len(ans.split()))
