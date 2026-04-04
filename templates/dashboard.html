@@ -48,9 +48,34 @@
 <body>
     <div class="header">
         <h1>MediChat <em>Analytics</em></h1>
-        <div class="stat-card" style="padding: 10px 20px; border-radius: 12px;">
-            <div class="stat-label">Total Queries</div>
-            <div class="stat-val" style="font-size: 1.5rem;">{{ total }}</div>
+        <div class="stat-card" style="padding: 10px 20px; border-radius: 12px; display: flex; gap: 20px;">
+            <div>
+                <div class="stat-label">Total Queries</div>
+                <div class="stat-val" style="font-size: 1.5rem;">{{ metrics.total }}</div>
+            </div>
+            <div style="border-left: 1px solid var(--border); padding-left: 20px;">
+                <div class="stat-label">Avg Latency</div>
+                <div class="stat-val" style="font-size: 1.5rem;">{{ metrics.avg_latency }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Avg Question (Words)</div>
+            <div class="stat-val">{{ metrics.avg_q_len }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Answer (Words)</div>
+            <div class="stat-val">{{ metrics.avg_a_len }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Languages Supported</div>
+            <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                {% for l in metrics.langs %}
+                <span class="lang-tag" style="padding: 5px 12px;">{{ l[0] }}: {{ l[1] }}</span>
+                {% endfor %}
+            </div>
         </div>
     </div>
 
@@ -62,14 +87,16 @@
                     <tr>
                         <th>QUESTION</th>
                         <th>LANG</th>
+                        <th>LATENCY</th>
                         <th>TIME</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for q in recent %}
                     <tr>
-                        <td>{{ q[0][:80] }}...</td>
+                        <td title="{{ q[0] }}">{{ q[0][:60] }}{% if q[0]|length > 60 %}...{% endif %}</td>
                         <td><span class="lang-tag">{{ q[1] }}</span></td>
+                        <td><code style="color: var(--accent2)">{{ "%.0f"|format(q[3]) if q[3] else "0" }}ms</code></td>
                         <td style="color: var(--text-dim); font-size: 0.8rem;">{{ q[2] }}</td>
                     </tr>
                     {% endfor %}
@@ -82,7 +109,7 @@
             <ul>
                 {% for q in top_queries %}
                 <li style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border);">
-                    <span style="font-size: 0.95rem;">{{ q[0] }}</span>
+                    <span style="font-size: 0.95rem;">{{ q[0][:40] }}{% if q[0]|length > 40 %}...{% endif %}</span>
                     <span style="color: var(--accent); font-weight: 700;">{{ q[1] }}</span>
                 </li>
                 {% endfor %}

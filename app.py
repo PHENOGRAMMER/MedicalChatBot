@@ -3,6 +3,7 @@ import json
 import sqlite3
 import io
 import re
+import time
 from flask import Flask, render_template, jsonify, request, send_file
 from dotenv import load_dotenv
 from src.helper import download_embeddings
@@ -78,20 +79,32 @@ def setup_db():
     conn = sqlite3.connect('medichat.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS queries 
-                      (id INTEGER PRIMARY KEY, session_id TEXT, question TEXT, answer TEXT, lang TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+                      (id INTEGER PRIMARY KEY, session_id TEXT, question TEXT, answer TEXT, lang TEXT, 
+                       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, chat_id TEXT, 
+                       latency_ms REAL, q_words INTEGER, a_words INTEGER)''')
     try:
         cursor.execute("ALTER TABLE queries ADD COLUMN chat_id TEXT")
-    except sqlite3.OperationalError:
-        pass
+    except sqlite3.OperationalError: pass
+    try:
+        cursor.execute("ALTER TABLE queries ADD COLUMN latency_ms REAL")
+    except sqlite3.OperationalError: pass
+    try:
+        cursor.execute("ALTER TABLE queries ADD COLUMN q_words INTEGER")
+    except sqlite3.OperationalError: pass
+    try:
+        cursor.execute("ALTER TABLE queries ADD COLUMN a_words INTEGER")
+    except sqlite3.OperationalError: pass
     conn.commit()
     conn.close()
 
 setup_db()
 
-def log_query(session_id, chat_id, question, answer, lang):
+def log_query(session_id, chat_id, question, answer, lang, latency_ms=0, q_words=0, a_words=0):
     conn = sqlite3.connect('medichat.db')
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO queries (session_id, chat_id, question, answer, lang) VALUES (?, ?, ?, ?, ?)', (session_id, chat_id, question, answer, lang))
+    cursor.execute('''INSERT INTO queries (session_id, chat_id, question, answer, lang, latency_ms, q_words, a_words) 
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', 
+                   (session_id, chat_id, question, answer, lang, latency_ms, q_words, a_words))
     conn.commit()
     conn.close()
 
@@ -133,7 +146,7 @@ def chat():
             except: pass
 
         ans = f"SEVERITY: INFO\n{ans_text}\n\nFOLLOWUPS:\n- {f1}\n- {f2}\n- {f3}"
-        log_query(session_id, chat_id, msg, ans, lang)
+        log_query(session_id, chat_id, msg, ans, lang, latency_ms=0, q_words=len(msg.split()), a_words=len(ans.split()))
         return ans
 
     if chat_key not in chats:
@@ -141,7 +154,10 @@ def chat():
     
     chat_history = chats[chat_key]
     
+    start_time = time.time()
     response = rag_chain.invoke({"input": msg_en, "chat_history": chat_history})
+    end_time = time.time()
+    latency = (end_time - start_time) * 1000
     
     sources = list(set([
         os.path.basename(doc.metadata.get("source", "Gale Encyclopedia of Medicine"))
@@ -190,7 +206,10 @@ def chat():
         final_answer += "\n\nFOLLOWUPS:\n" + "\n".join(f"- {f}" for f in followups)
 
     # Log to DB
-    log_query(session_id, chat_id, msg, final_answer, lang)
+    log_query(session_id, chat_id, msg, final_answer, lang, 
+              latency_ms=latency, 
+              q_words=len(msg.split()), 
+              a_words=len(main_ans.split()))
 
     # History
     chat_history.append(HumanMessage(content=msg_en))
@@ -219,6 +238,7 @@ def chat_stream():
     f1, f2, f3 = "What information can you provide?", "Tell me about common conditions.", "How do I use the body map?"
     
     def generate():
+        start_time = time.time()
         response_stream = rag_chain.stream({"input": msg_en, "chat_history": chat_history})
         ans_raw_accumulator = []
         context_docs = []
@@ -247,7 +267,8 @@ def chat_stream():
         # We also need to send the full complete formatted text block hidden.
         yield f"data: {json.dumps({'done': True, 'fullText': final})}\n\n"
         
-        log_query(session_id, chat_id, msg, final, lang)
+        latency = (time.time() - start_time) * 1000
+        log_query(session_id, chat_id, msg, final, lang, latency_ms=latency, q_words=len(msg.split()), a_words=len(ans_str.split()))
         chat_history.append(HumanMessage(content=msg_en))
         chat_history.append(AIMessage(content=ans_str))
         if len(chat_history) > 10:
@@ -261,26 +282,51 @@ def symptom_check():
     chat_id = request.json.get("chat_id", "default")
     sid = request.remote_addr
     query = f"Based on the provided medical encyclopedia, what conditions are associated with these symptoms: {', '.join(symptoms)}? Please categorize by likelihood and provide next steps."
+    start_time = time.time()
     response = rag_chain.invoke({"input": query, "chat_history": []})
+    latency = (time.time() - start_time) * 1000
     ans = f"SEVERITY: CONSULT_DOCTOR\n" + response["answer"]
-    log_query(sid, chat_id, f"SYMPTOM CHECK: {symptoms}", ans, "en")
+    log_query(sid, chat_id, f"SYMPTOM CHECK: {symptoms}", ans, "en", latency_ms=latency, q_words=len(query.split()), a_words=len(ans.split()))
     return jsonify({"answer": ans})
 
 @app.route("/dashboard")
 def dashboard():
     conn = sqlite3.connect('medichat.db')
     cursor = conn.cursor()
-    # Top 10 queries
-    cursor.execute('SELECT question, COUNT(*) as count FROM queries GROUP BY question ORDER BY count DESC LIMIT 10')
-    top_q = cursor.fetchall()
-    # Recent 10
-    cursor.execute('SELECT question, lang, timestamp FROM queries ORDER BY timestamp DESC LIMIT 10')
-    recent = cursor.fetchall()
-    # Totals
+    
+    # 1. Basic Stats
     cursor.execute('SELECT COUNT(*) FROM queries')
     total = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT AVG(latency_ms) FROM queries WHERE latency_ms > 0')
+    avg_latency = cursor.fetchone()[0] or 0
+    
+    cursor.execute('SELECT AVG(q_words), AVG(a_words) FROM queries')
+    avg_q_len, avg_a_len = cursor.fetchone()
+    
+    # 2. Languages
+    cursor.execute('SELECT lang, COUNT(*) FROM queries GROUP BY lang')
+    langs = cursor.fetchall()
+    
+    # 3. Top Queries
+    cursor.execute('SELECT question, COUNT(*) as count FROM queries GROUP BY question ORDER BY count DESC LIMIT 10')
+    top_q = cursor.fetchall()
+    
+    # 4. Recent Interactions
+    cursor.execute('SELECT question, lang, timestamp, latency_ms FROM queries ORDER BY timestamp DESC LIMIT 10')
+    recent = cursor.fetchall()
+    
     conn.close()
-    return render_template("dashboard.html", top_queries=top_q, recent=recent, total=total)
+    
+    metrics = {
+        "total": total,
+        "avg_latency": f"{avg_latency:.2f}ms",
+        "avg_q_len": f"{avg_q_len or 0:.1f}",
+        "avg_a_len": f"{avg_a_len or 0:.1f}",
+        "langs": langs
+    }
+    
+    return render_template("dashboard.html", top_queries=top_q, recent=recent, metrics=metrics)
 
 @app.route("/export", methods=["POST"])
 def export_chat():
@@ -382,4 +428,4 @@ def get_history_by_id(chat_id):
     return jsonify({"history": [{"q": r[0], "a": r[1]} for r in rows]})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=8080, debug=False)

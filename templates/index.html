@@ -108,6 +108,7 @@
                         <div class="live-dot"></div>LLaMA 3.1 · 8B
                     </div>
                     <div class="model-tag">Pinecone Vector DB</div>
+                    <div class="model-tag" id="latencyMonitor" style="color:var(--accent2); background:rgba(16,185,129,0.05); border-color:rgba(16,185,129,0.2); display:none;">0ms</div>
                 </div>
                 <div class="topbar-right" style="display:flex; gap:10px;">
                     <button class="icon-btn" title="Export PDF" onclick="exportChat()">
@@ -539,6 +540,10 @@
             const sendBtn = document.getElementById('sendBtn');
             sendBtn.disabled = true;
             input.disabled = true;
+            const startTime = performance.now();
+            const latMon = document.getElementById('latencyMonitor');
+            latMon.style.display = 'inline-flex';
+            latMon.innerText = '···';
 
             appendUser(text);
             input.value = '';
@@ -582,7 +587,14 @@
                                     try {
                                         const p = JSON.parse(d);
                                         if (p.text) { rawAcc += p.text; target.innerText = rawAcc; messages.scrollTop = messages.scrollHeight; }
-                                        if (p.done) { div.remove(); appendBot(p.fullText); loadSessions(); return; }
+                                        if (p.done) { 
+                                            const endTime = performance.now();
+                                            latMon.innerText = Math.round(endTime - startTime) + 'ms';
+                                            div.remove(); 
+                                            appendBot(p.fullText); 
+                                            loadSessions(); 
+                                            return; 
+                                        }
                                     } catch (e) { }
                                 }
                             }
@@ -597,6 +609,8 @@
                     body: `msg=${encodeURIComponent(text)}&lang=${currentLang}&chat_id=${encodeURIComponent(currentChatId)}`
                 });
                 const answer = await res.text();
+                const endTime = performance.now();
+                latMon.innerText = Math.round(endTime - startTime) + 'ms';
                 removeTyping();
                 appendBot(answer);
                 loadSessions();

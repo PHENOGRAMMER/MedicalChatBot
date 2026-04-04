@@ -8,4 +8,5 @@ langchain-groq==0.3.8
 langchain-community==0.3.26
 fpdf2==2.8.7
 deep-translator==1.11.4
+gunicorn
 -e .
