@@ -31,46 +31,61 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
 os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 
-embeddings = download_embeddings()
+# Global storage for lazy-loaded chain
+_rag_chain = None
 
-index_name = "medical-chatbot"
-
-docsearch = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
-    embedding=embeddings
-)
-
-retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 3})
-
-
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0.4,
-    max_tokens=600
-)
-
-# Contextualize Question
-contextualize_q_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", contextualize_q_system_prompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
-)
-history_aware_retriever = create_history_aware_retriever(
-    llm, retriever, contextualize_q_prompt
-)
-
-# Answer Question
-qa_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system_prompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
-)
-question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
-rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+def get_rag_chain():
+    global _rag_chain
+    if _rag_chain is not None:
+        return _rag_chain
+        
+    print("Initializing Lazy RAG Chain...")
+    try:
+        # Load embeddings (Heavy operation)
+        embeddings = download_embeddings()
+        
+        index_name = "medical-chatbot"
+        
+        # Connect to Pinecone
+        docsearch = PineconeVectorStore.from_existing_index(
+            index_name=index_name,
+            embedding=embeddings
+        )
+        
+        retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+        
+        llm = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.4,
+            max_tokens=600
+        )
+        
+        # Contextualize Question
+        contextualize_q_prompt = ChatPromptTemplate.from_messages([
+            ("system", contextualize_q_system_prompt),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ])
+        
+        history_aware_retriever = create_history_aware_retriever(
+            llm, retriever, contextualize_q_prompt
+        )
+        
+        # Answer Question
+        qa_prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ])
+        
+        question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+        
+        _rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+        print("RAG Chain Initialized Successfully!")
+        return _rag_chain
+    except Exception as e:
+        print(f"ERROR: Failed to initialize RAG chain: {e}")
+        raise e
 
 # Memory store for chat history (Simple global store for demo, ideally use DB)
 chats = {}
@@ -155,7 +170,7 @@ def chat():
     chat_history = chats[chat_key]
     
     start_time = time.time()
-    response = rag_chain.invoke({"input": msg_en, "chat_history": chat_history})
+    response = get_rag_chain().invoke({"input": msg_en, "chat_history": chat_history})
     end_time = time.time()
     latency = (end_time - start_time) * 1000
     
@@ -239,7 +254,7 @@ def chat_stream():
     
     def generate():
         start_time = time.time()
-        response_stream = rag_chain.stream({"input": msg_en, "chat_history": chat_history})
+        response_stream = get_rag_chain().stream({"input": msg_en, "chat_history": chat_history})
         ans_raw_accumulator = []
         context_docs = []
         has_yielded_context = False
@@ -283,7 +298,7 @@ def symptom_check():
     sid = request.remote_addr
     query = f"Based on the provided medical encyclopedia, what conditions are associated with these symptoms: {', '.join(symptoms)}? Please categorize by likelihood and provide next steps."
     start_time = time.time()
-    response = rag_chain.invoke({"input": query, "chat_history": []})
+    response = get_rag_chain().invoke({"input": query, "chat_history": []})
     latency = (time.time() - start_time) * 1000
     ans = f"SEVERITY: CONSULT_DOCTOR\n" + response["answer"]
     log_query(sid, chat_id, f"SYMPTOM CHECK: {symptoms}", ans, "en", latency_ms=latency, q_words=len(query.split()), a_words=len(ans.split()))
