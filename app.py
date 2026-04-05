@@ -42,17 +42,11 @@ def get_rag_chain():
     if _rag_chain is not None:
         return _rag_chain
         
-    print("Initializing Lazy RAG Chain...")
-    print(f"Debug: PINECONE_API_KEY present? {'Yes' if os.environ.get('PINECONE_API_KEY') else 'No'}")
-    print(f"Debug: GROQ_API_KEY present? {'Yes' if os.environ.get('GROQ_API_KEY') else 'No'}")
+    print("Initializing Lazy RAG Components...")
     try:
-        # Load embeddings (Heavy operation)
         embeddings = download_embeddings()
-        
         index_name = "medical-chatbot"
-        print(f"Debug: Connecting to Pinecone index: {index_name}")
         
-        # Connect to Pinecone
         docsearch = PineconeVectorStore.from_existing_index(
             index_name=index_name,
             embedding=embeddings
@@ -62,11 +56,11 @@ def get_rag_chain():
         
         llm = ChatGroq(
             model="llama-3.1-8b-instant",
-            temperature=0.4,
+            temperature=0.3,
             max_tokens=600
         )
         
-        # Contextualize Question
+        # Contextualize Question Prompt
         contextualize_q_prompt = ChatPromptTemplate.from_messages([
             ("system", contextualize_q_system_prompt),
             MessagesPlaceholder("chat_history"),
@@ -77,7 +71,7 @@ def get_rag_chain():
             llm, retriever, contextualize_q_prompt
         )
         
-        # Answer Question
+        # QA Prompt
         qa_prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             MessagesPlaceholder("chat_history"),
@@ -86,14 +80,18 @@ def get_rag_chain():
         
         question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
         
-        _rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-        print("RAG Chain Initialized Successfully!")
+        # Store both components in a wrapper or handle logic in the route
+        _rag_chain = {
+            "retriever": retriever,
+            "history_retriever": history_aware_retriever,
+            "qa_chain": question_answer_chain,
+            "full_chain": create_retrieval_chain(history_aware_retriever, question_answer_chain)
+        }
+        print("RAG Components Initialized Successfully!")
         return _rag_chain
     except Exception as e:
-        import traceback
-        error_msg = f"ERROR: Failed to initialize RAG chain: {str(e)}\n{traceback.format_exc()}"
-        print(error_msg)
-        return None  # Return None instead of raising so we can handle it gracefully in routes
+        print(f"ERROR: Failed to initialize RAG: {e}")
+        return None
 
 # Memory store for chat history (Simple global store for demo, ideally use DB)
 chats = {}
@@ -180,12 +178,21 @@ def chat():
     
     chat_history = chats[chat_key]
     
-    chain = get_rag_chain()
-    if not chain:
-        return "SEVERITY: ERROR\nI encountered an issue connecting to the medical database. This is usually caused by missing API keys in the deployment settings. Please check your Render Environment Variables for PINECONE_API_KEY and GROQ_API_KEY."
+    chains = get_rag_chain()
+    if not chains:
+        return "SEVERITY: ERROR\nI encountered an issue connecting to the medical database. Please check your deployment logs."
 
     start_time = time.time()
-    response = chain.invoke({"input": msg_en, "chat_history": chat_history})
+    
+    # PERFORMANCE OPTIMIZATION: If no history, bypass history_aware_retriever to save 1 LLM call
+    if not chat_history:
+        # Use basic retriever and direct QA chain
+        docs = chains["retriever"].invoke(msg_en)
+        response = chains["qa_chain"].invoke({"input": msg_en, "chat_history": [], "context": docs})
+        response["context"] = docs
+    else:
+        # Use full history-aware chain
+        response = chains["full_chain"].invoke({"input": msg_en, "chat_history": chat_history})
     end_time = time.time()
     latency = (end_time - start_time) * 1000
     
@@ -268,14 +275,24 @@ def chat_stream():
     f1, f2, f3 = "What information can you provide?", "Tell me about common conditions.", "How do I use the body map?"
     
     def generate():
-        chain = get_rag_chain()
-        if not chain:
+        chains = get_rag_chain()
+        if not chains:
             yield f"data: {json.dumps({'text': 'ERROR: The medical database is currently unavailable.'})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'fullText': 'The medical database is currently unavailable.'})}\n\n"
             return
             
         start_time = time.time()
-        response_stream = chain.stream({"input": msg_en, "chat_history": chat_history})
+        
+        # PERFORMANCE OPTIMIZATION for FIRST QUERY
+        if not chat_history:
+            # Skip history-aware retriever
+            docs = chains["retriever"].invoke(msg_en)
+            response_stream = chains["qa_chain"].stream({"input": msg_en, "chat_history": [], "context": docs})
+            context_docs = docs
+            has_yielded_context = True # Already have them
+        else:
+            response_stream = chains["full_chain"].stream({"input": msg_en, "chat_history": chat_history})
+            context_docs = []
+            has_yielded_context = False
         ans_raw_accumulator = []
         context_docs = []
         has_yielded_context = False
