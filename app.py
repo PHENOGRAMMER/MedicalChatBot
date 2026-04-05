@@ -132,6 +132,22 @@ def log_query(session_id, chat_id, question, answer, lang, latency_ms=0, q_words
     except Exception as e:
         print(f"ERROR: Failed to log query to DB: {e}")
 
+def finalize_streaming_response(start_time, msg_en, ans_str, context_docs, lang, session_id, chat_id, chat_history):
+    sources = list(set([os.path.basename(doc.metadata.get("source", "Gale Encyclopedia of Medicine")) for doc in context_docs]))
+    s_text = ("\n\nSOURCES:\n" + "\n".join(f"- {s}" for s in sources)) if sources else ""
+    
+    f1, f2, f3 = "What information can you provide?", "Tell me about common conditions.", "How do I use the body map?"
+    if "FOLLOWUPS:" not in ans_str:
+        s_text += f"\n\nFOLLOWUPS:\n- {f1}\n- {f2}\n- {f3}"
+    
+    final = ans_str + s_text
+    latency = (time.time() - start_time) * 1000
+    log_query(session_id, chat_id, msg_en, final, lang, latency_ms=latency, q_words=len(msg_en.split()), a_words=len(ans_str.split()))
+    
+    chat_history.append(HumanMessage(content=msg_en))
+    chat_history.append(AIMessage(content=ans_str))
+    return final
+
 
 @app.route("/")
 def index():
@@ -188,8 +204,8 @@ def chat():
     if not chat_history:
         # Use basic retriever and direct QA chain
         docs = chains["retriever"].invoke(msg_en)
-        response = chains["qa_chain"].invoke({"input": msg_en, "chat_history": [], "context": docs})
-        response["context"] = docs
+        ans_text = chains["qa_chain"].invoke({"input": msg_en, "chat_history": [], "context": docs})
+        response = {"answer": ans_text, "context": docs}
     else:
         # Use full history-aware chain
         response = chains["full_chain"].invoke({"input": msg_en, "chat_history": chat_history})
@@ -289,6 +305,17 @@ def chat_stream():
             response_stream = chains["qa_chain"].stream({"input": msg_en, "chat_history": [], "context": docs})
             context_docs = docs
             has_yielded_context = True # Already have them
+            ans_str_list = []
+            for chunk in response_stream:
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
+                ans_str_list.append(chunk)
+            
+            # Send done signal
+            final_ans = "".join(ans_str_list)
+            # Finish processing normally
+            full_final_text = finalize_streaming_response(start_time, msg_en, final_ans, context_docs, lang, session_id, chat_id, chat_history)
+            yield f"data: {json.dumps({'done': True, 'fullText': full_final_text})}\n\n"
+            return 
         else:
             response_stream = chains["full_chain"].stream({"input": msg_en, "chat_history": chat_history})
             context_docs = []
@@ -309,22 +336,13 @@ def chat_stream():
                 
         # Send finalizing structure signal
         ans_str = "".join(ans_raw_accumulator)
+        final = finalize_streaming_response(start_time, msg_en, ans_str, context_docs, lang, session_id, chat_id, chat_history)
         
-        sources = list(set([os.path.basename(doc.metadata.get("source", "Gale Encyclopedia of Medicine")) for doc in context_docs]))
-        s_text = ("\n\nSOURCES:\n" + "\n".join(f"- {s}" for s in sources)) if sources else ""
-        
-        if "FOLLOWUPS:" not in ans_str:
-            s_text += f"\n\nFOLLOWUPS:\n- {f1}\n- {f2}\n- {f3}"
-            
-        final = ans_str + s_text
         # We also need to send the full complete formatted text block hidden.
         yield f"data: {json.dumps({'done': True, 'fullText': final})}\n\n"
         
-        latency = (time.time() - start_time) * 1000
-        log_query(session_id, chat_id, msg, final, lang, latency_ms=latency, q_words=len(msg.split()), a_words=len(ans_str.split()))
-        chat_history.append(HumanMessage(content=msg_en))
-        chat_history.append(AIMessage(content=ans_str))
         if len(chat_history) > 10:
+            chat_key = f"{session_id}_{chat_id}"
             chats[chat_key] = chat_history[-10:]
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
