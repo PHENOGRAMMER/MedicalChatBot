@@ -43,11 +43,14 @@ def get_rag_chain():
         return _rag_chain
         
     print("Initializing Lazy RAG Chain...")
+    print(f"Debug: PINECONE_API_KEY present? {'Yes' if os.environ.get('PINECONE_API_KEY') else 'No'}")
+    print(f"Debug: GROQ_API_KEY present? {'Yes' if os.environ.get('GROQ_API_KEY') else 'No'}")
     try:
         # Load embeddings (Heavy operation)
         embeddings = download_embeddings()
         
         index_name = "medical-chatbot"
+        print(f"Debug: Connecting to Pinecone index: {index_name}")
         
         # Connect to Pinecone
         docsearch = PineconeVectorStore.from_existing_index(
@@ -179,7 +182,7 @@ def chat():
     
     chain = get_rag_chain()
     if not chain:
-        return "SEVERITY: ERROR\nThe medical database is currently unavailable due to a configuration error. Please ensure API keys are set correctly."
+        return "SEVERITY: ERROR\nI encountered an issue connecting to the medical database. This is usually caused by missing API keys in the deployment settings. Please check your Render Environment Variables for PINECONE_API_KEY and GROQ_API_KEY."
 
     start_time = time.time()
     response = chain.invoke({"input": msg_en, "chat_history": chat_history})
