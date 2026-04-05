@@ -440,33 +440,47 @@
         }
 
         async function exportChat() {
+            const btn = document.querySelector('button[title="Export PDF"]');
+            if (btn) btn.style.opacity = '0.5';
+
             try {
                 const formData = new URLSearchParams();
                 formData.append('chat_id', currentChatId);
                 const res = await fetch('/export', { method: 'POST', body: formData });
-                if (res.ok) {
-                    const blob = await res.blob();
-
-                    let filename = 'MedChat_Consultation_Record.pdf';
-                    const cd = res.headers.get('Content-Disposition');
-                    if (cd && cd.includes('filename=')) {
-                        filename = cd.split('filename=')[1].replace(/["']/g, '');
-                    }
-
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = url;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                } else {
-                    alert('Export failed.');
+                
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText || 'Server error during export');
                 }
+
+                const blob = await res.blob();
+                if (blob.size === 0) throw new Error('Generated PDF is empty');
+
+                let filename = `MedChat_Consultation_${new Date().getTime()}.pdf`;
+                const cd = res.headers.get('Content-Disposition');
+                if (cd && cd.includes('filename=')) {
+                    filename = cd.split('filename=')[1].replace(/["']/g, '').trim();
+                }
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                
+                // Cleanup
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+
             } catch (err) {
-                console.error(err);
-                alert('Export failed due to network error.');
+                console.error('Export Error:', err);
+                alert('Export failed: ' + err.message);
+            } finally {
+                if (btn) btn.style.opacity = '1';
             }
         }
 

@@ -405,53 +405,73 @@ def dashboard():
 
 @app.route("/export", methods=["POST"])
 def export_chat():
-    session_id = request.remote_addr
-    chat_id = request.form.get("chat_id", "default")
-    chat_key = f"{session_id}_{chat_id}"
-    chat_history = chats.get(chat_key, [])
-    
-    # 1. Determine dynamic filename from first prompt
-    file_prefix = "MedChat"
-    for msg in chat_history:
-        if isinstance(msg, HumanMessage):
-            raw_text = getattr(msg, 'content', str(msg))
-            clean_text = re.sub(r'[^a-zA-Z0-9_\- ]', '', raw_text).strip()
-            if clean_text:
-                file_prefix = clean_text[:30].replace(' ', '_')
-                break
-    
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 18)
-    pdf.cell(0, 10, "MedChat Consultation Record", ln=True, align='C')
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", size=10)
-    for msg in chat_history:
-        role = "YOU" if isinstance(msg, HumanMessage) else "MEDICHAT"
-        # Access content safely from LangChain message objects
-        content = getattr(msg, 'content', str(msg))
+    try:
+        session_id = request.remote_addr
+        chat_id = request.form.get("chat_id", "default")
+        chat_key = f"{session_id}_{chat_id}"
+        chat_history = chats.get(chat_key, [])
         
-        # Strip metadata from PDF
-        if "SEVERITY:" in content: content = content.split("\n", 1)[1] if "\n" in content else content
-        if "FOLLOWUPS:" in content: content = content.split("FOLLOWUPS:")[0]
+        if not chat_history:
+            return "No chat history found for this session to export.", 400
+
+        # 1. Determine dynamic filename from first prompt
+        file_prefix = "MedChat"
+        for msg in chat_history:
+            if isinstance(msg, HumanMessage):
+                raw_text = getattr(msg, 'content', str(msg))
+                clean_text = re.sub(r'[^a-zA-Z0-9_\- ]', '', raw_text).strip()
+                if clean_text:
+                    file_prefix = clean_text[:30].replace(' ', '_')
+                    break
         
-        pdf.set_font("Arial", 'B', 10)
-        pdf.cell(0, 8, f"{role}:", ln=True)
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 6, content.strip())
-        pdf.ln(5)
-    
-    output = io.BytesIO()
-    pdf.output(output)
-    output.seek(0)
-    
-    return send_file(
-        output,
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=f"{file_prefix}_Consultation.pdf"
-    )
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Try to set a common font
+        try:
+            pdf.set_font("Helvetica", 'B', 18)
+        except:
+            pdf.set_font("Arial", 'B', 18)
+            
+        pdf.cell(0, 10, "MedChat Consultation Record", ln=True, align='C')
+        pdf.ln(10)
+        
+        for msg in chat_history:
+            role = "YOU" if isinstance(msg, HumanMessage) else "MEDICHAT"
+            content = getattr(msg, 'content', str(msg))
+            
+            # Metadata cleanup
+            if "SEVERITY:" in content: content = content.split("\n", 1)[1] if "\n" in content else content
+            if "FOLLOWUPS:" in content: content = content.split("FOLLOWUPS:")[0]
+            if "SOURCES:" in content: content = content.split("SOURCES:")[0]
+            
+            # Clean text for Latin-1 (standard PDF fonts)
+            # Replace smart quotes and other common symbols that crash FPDF
+            content = content.replace('\u2013', '-').replace('\u2014', '-') \
+                             .replace('\u2018', "'").replace('\u2019', "'") \
+                             .replace('\u201c', '"').replace('\u201d', '"') \
+                             .replace('\u2022', '*').replace('\u2026', '...')
+            
+            # Final fallback for any other non-latin-1 chars
+            content = content.encode('latin-1', 'replace').decode('latin-1')
+
+            pdf.set_font(pdf.font_family, 'B', 10)
+            pdf.cell(0, 8, f"{role}:", ln=True)
+            pdf.set_font(pdf.font_family, size=10)
+            pdf.multi_cell(0, 6, content.strip())
+            pdf.ln(5)
+        
+        pdf_bytes = pdf.output()
+        
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"{file_prefix}_Consultation.pdf"
+        )
+    except Exception as e:
+        print(f"PDF Export Error: {e}")
+        return f"Failed to generate PDF: {str(e)}", 500
 
 @app.route("/sessions", methods=["GET"])
 def get_sessions():
