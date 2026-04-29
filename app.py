@@ -21,9 +21,10 @@ except ImportError:
 from deep_translator import GoogleTranslator
 from langchain.chains import create_history_aware_retriever
 
+load_dotenv()  # Must run first so all os.environ.get() calls see .env values locally
+
 app = Flask(__name__)
-app.secret_key = "medical-chatbot-secret"
-load_dotenv()
+app.secret_key = os.environ.get("SECRET_KEY", "medical-chatbot-secret-dev")
 
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -353,12 +354,12 @@ def symptom_check():
     chat_id = request.json.get("chat_id", "default")
     sid = request.remote_addr
     query = f"Based on the provided medical encyclopedia, what conditions are associated with these symptoms: {', '.join(symptoms)}? Please categorize by likelihood and provide next steps."
-    chain = get_rag_chain()
-    if not chain:
+    chains = get_rag_chain()
+    if not chains:
         return jsonify({"answer": "SEVERITY: ERROR\nThe medical database is currently unavailable."})
 
     start_time = time.time()
-    response = chain.invoke({"input": query, "chat_history": []})
+    response = chains["full_chain"].invoke({"input": query, "chat_history": []})
     latency = (time.time() - start_time) * 1000
     ans = f"SEVERITY: CONSULT_DOCTOR\n" + response["answer"]
     log_query(sid, chat_id, f"SYMPTOM CHECK: {symptoms}", ans, "en", latency_ms=latency, q_words=len(query.split()), a_words=len(ans.split()))
